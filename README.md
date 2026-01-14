@@ -27,7 +27,7 @@ Using lazy.nvim:
 
 ```lua
 {
-  "your-username/diffnotes.nvim",
+  "georgeguimaraes/diffnotes.nvim",
   dependencies = {
     "sindrets/diffview.nvim",
     "MunifTanjim/nui.nvim",
