@@ -83,11 +83,6 @@ function M.open()
       diff4 = dv_keymaps,
       file_panel = file_panel_keymaps,
     },
-    view = {
-      default = {
-        layout = "diff1_plain",
-      },
-    },
   })
 
   vim.cmd("DiffviewOpen")
