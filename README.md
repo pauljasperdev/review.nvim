@@ -1,6 +1,6 @@
 # diffnotes.nvim
 
-Code review annotations for diffview.nvim, optimized for AI feedback loops.
+Code review annotations for codediff.nvim, optimized for AI feedback loops.
 
 Inspired by [tuicr](https://github.com/agavra/tuicr).
 
@@ -8,18 +8,16 @@ Inspired by [tuicr](https://github.com/agavra/tuicr).
 
 - Add comments to specific lines in diff view (Note, Suggestion, Issue, Praise)
 - Comments displayed as signs, line highlights, and virtual text
-- Unified diff view by default (toggle with `t`)
 - Comments persist per branch (stored in `~/.local/share/nvim/diffnotes/`)
 - Auto-export comments to clipboard when closing
 - Export format optimized for AI conversations
-- Built on top of diffview.nvim
+- Built on top of codediff.nvim
 
 ## Requirements
 
 - Neovim >= 0.9
-- [diffview.nvim](https://github.com/sindrets/diffview.nvim)
+- [codediff.nvim](https://github.com/esmuellert/codediff.nvim)
 - [nui.nvim](https://github.com/MunifTanjim/nui.nvim)
-- [plenary.nvim](https://github.com/nvim-lua/plenary.nvim) (for tests)
 
 ## Installation
 
@@ -29,7 +27,7 @@ Using lazy.nvim:
 {
   "georgeguimaraes/diffnotes.nvim",
   dependencies = {
-    "sindrets/diffview.nvim",
+    "esmuellert/codediff.nvim",
     "MunifTanjim/nui.nvim",
   },
   config = function()
@@ -41,13 +39,12 @@ Using lazy.nvim:
 ## Usage
 
 ```vim
-:DiffnotesOpen          " Open diffview with comment keymaps enabled
+:DiffnotesOpen          " Open codediff with comment keymaps enabled
 :DiffnotesExport        " Export comments to clipboard
 :DiffnotesPreview       " Preview exported markdown in split
-:DiffnotesList          " List all comments in quickfix
+:DiffnotesList          " List all comments
 :DiffnotesClear         " Clear all comments
-:DiffnotesToggleLayout  " Cycle layout (horizontal/vertical)
-:DiffnotesClose         " Close diffview
+:DiffnotesClose         " Close codediff
 ```
 
 ## Keybindings (in diff view)
@@ -58,14 +55,13 @@ Using lazy.nvim:
 | `i` | Add comment (pick type from menu) |
 | `d` | Delete comment at cursor |
 | `e` | Edit comment at cursor |
-| `c` | List all comments (quickfix) |
-| `t` | Cycle layout (horizontal/vertical/single) |
-| `f` | Toggle focus (file panel/content) |
+| `c` | List all comments |
+| `f` | Toggle file panel visibility |
 | `R` | Toggle readonly/edit mode |
 | `<Tab>` | Next file |
 | `<S-Tab>` | Previous file |
-| `]c` | Jump to next comment |
-| `[c` | Jump to previous comment |
+| `]n` | Jump to next comment |
+| `[n` | Jump to previous comment |
 | `<C-e>` | Export comments to clipboard |
 | `C` | Clear all comments |
 | `q` | Close and copy comments to clipboard |
@@ -94,14 +90,16 @@ require("diffnotes").setup({
     add_praise = "<leader>cp",
     delete_comment = "<leader>cd",
     edit_comment = "<leader>ce",
-    next_comment = "]c",
-    prev_comment = "[c",
+    next_comment = "]n",
+    prev_comment = "[n",
     export = "<C-e>",
-    toggle_layout = "<C-l>",
   },
   export = {
     context_lines = 3,
     include_file_stats = true,
+  },
+  codediff = {
+    readonly = true,
   },
 })
 ```

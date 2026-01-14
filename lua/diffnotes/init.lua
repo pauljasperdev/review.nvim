@@ -9,6 +9,7 @@ local export = require("diffnotes.export")
 local comments = require("diffnotes.comments")
 
 local initialized = false
+local augroup = nil
 
 ---@param opts? DiffnotesConfig
 function M.setup(opts)
@@ -19,98 +20,68 @@ function M.setup(opts)
   config.setup(opts)
   highlights.setup()
 
+  -- Set up autocmd to detect CodeDiff sessions
+  augroup = vim.api.nvim_create_augroup("diffnotes", { clear = true })
+
+  vim.api.nvim_create_autocmd("TabEnter", {
+    group = augroup,
+    callback = function()
+      vim.defer_fn(function()
+        M._check_codediff_session()
+      end, 100)
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("TabClosed", {
+    group = augroup,
+    callback = function()
+      hooks.on_session_closed()
+    end,
+  })
+
   initialized = true
 end
 
-function M.open()
-  local ok, diffview = pcall(require, "diffview")
+-- Check if current tab is a CodeDiff session and set up hooks/keymaps
+function M._check_codediff_session()
+  local ok, lifecycle = pcall(require, "codediff.ui.lifecycle")
   if not ok then
-    vim.notify("diffview.nvim is required", vim.log.levels.ERROR, { title = "Diffnotes" })
+    return
+  end
+
+  local tabpage = vim.api.nvim_get_current_tabpage()
+  local sess = lifecycle.get_session(tabpage)
+  if not sess then
+    return
+  end
+
+  -- This is a codediff session
+  local orig_buf, mod_buf = lifecycle.get_buffers(tabpage)
+
+  -- Set up hooks
+  hooks.on_session_created(tabpage)
+
+  -- Set up keymaps
+  keymaps.setup_keymaps(tabpage, orig_buf, mod_buf)
+end
+
+function M.open()
+  local ok, _ = pcall(require, "codediff")
+  if not ok then
+    vim.notify("codediff.nvim is required", vim.log.levels.ERROR, { title = "Diffnotes" })
     return
   end
 
   -- Load persisted comments
   store.load()
 
-  local dv_hooks = hooks.get_diffview_hooks()
-  local dv_keymaps = keymaps.get_diffview_keymaps()
+  -- Open CodeDiff in explorer mode
+  vim.cmd("CodeDiff")
 
-  -- File panel keymaps: Enter selects and focuses content
-  local file_panel_keymaps = {
-    {
-      "n", "<cr>",
-      function()
-        local actions = require("diffview.actions")
-        actions.select_entry()
-        vim.defer_fn(function()
-          actions.focus_entry()
-        end, 10)
-      end,
-      { desc = "Select and focus file" },
-    },
-    {
-      "n", "<Tab>",
-      function()
-        local actions = require("diffview.actions")
-        actions.select_next_entry()
-        vim.defer_fn(function()
-          actions.focus_entry()
-        end, 10)
-      end,
-      { desc = "Next file" },
-    },
-    {
-      "n", "<S-Tab>",
-      function()
-        local actions = require("diffview.actions")
-        actions.select_prev_entry()
-        vim.defer_fn(function()
-          actions.focus_entry()
-        end, 10)
-      end,
-      { desc = "Previous file" },
-    },
-    { "n", "q", function() M.close() end, { desc = "Close" } },
-  }
-
-  diffview.setup({
-    hooks = dv_hooks,
-    keymaps = {
-      view = dv_keymaps,
-      diff1 = dv_keymaps,
-      diff2 = dv_keymaps,
-      diff3 = dv_keymaps,
-      diff4 = dv_keymaps,
-      file_panel = file_panel_keymaps,
-    },
-  })
-
-  vim.cmd("DiffviewOpen")
-
-  -- Focus first file and switch to unified layout
+  -- Wait for CodeDiff to initialize, then set up our hooks
   vim.defer_fn(function()
-    local actions = require("diffview.actions")
-    actions.select_entry()
-    vim.defer_fn(function()
-      actions.focus_entry()
-      -- Convert all files to unified (Diff1) layout
-      vim.defer_fn(function()
-        local lib = require("diffview.lib")
-        local view = lib.get_current_view()
-        if not view then return end
-
-        local Diff1 = require("diffview.scene.layouts.diff_1").Diff1
-        local files = {}
-        if view.panel and view.panel.files then
-          if view.panel.files.working then vim.list_extend(files, view.panel.files.working) end
-          if view.panel.files.staged then vim.list_extend(files, view.panel.files.staged) end
-        end
-        for _, entry in ipairs(files) do
-          entry:convert_layout(Diff1)
-        end
-      end, 50)
-    end, 50)
-  end, 100)
+    M._check_codediff_session()
+  end, 200)
 end
 
 function M.close()
@@ -122,7 +93,10 @@ function M.close()
     vim.fn.setreg("*", markdown)
     vim.notify(string.format("Exported %d comment(s) to clipboard", count), vim.log.levels.INFO, { title = "Diffnotes" })
   end
-  vim.cmd("DiffviewClose")
+
+  -- Close the tab
+  vim.cmd("tabclose")
+  hooks.on_session_closed()
 end
 
 function M.export()
@@ -161,107 +135,35 @@ end
 
 function M.toggle_readonly()
   local cfg = config.get()
-  cfg.diffview.readonly = not cfg.diffview.readonly
+  cfg.codediff.readonly = not cfg.codediff.readonly
 
-  -- Re-apply keymaps by closing and reopening
-  local ok, lib = pcall(require, "diffview.lib")
-  if ok then
-    local view = lib.get_current_view()
-    if view then
-      -- Refresh diffview with new keymaps
-      local dv_hooks = hooks.get_diffview_hooks()
-      local dv_keymaps = keymaps.get_diffview_keymaps()
-
-      require("diffview").setup({
-        hooks = dv_hooks,
-        keymaps = {
-          view = dv_keymaps,
-          diff1 = dv_keymaps,
-          diff2 = dv_keymaps,
-          diff3 = dv_keymaps,
-          diff4 = dv_keymaps,
-        },
-      })
-
-      -- Update buffer readonly state
-      if view.cur_layout then
-        local wins = { view.cur_layout.a, view.cur_layout.b, view.cur_layout.c, view.cur_layout.d }
-        for _, win in ipairs(wins) do
-          if win and win.file and win.file.bufnr and vim.api.nvim_buf_is_valid(win.file.bufnr) then
-            vim.api.nvim_set_option_value("modifiable", not cfg.diffview.readonly, { buf = win.file.bufnr })
-            vim.api.nvim_set_option_value("readonly", cfg.diffview.readonly, { buf = win.file.bufnr })
-          end
-        end
-      end
-    end
-  end
-
-  local mode = cfg.diffview.readonly and "readonly" or "edit"
-  vim.notify("Switched to " .. mode .. " mode", vim.log.levels.INFO, { title = "Diffnotes" })
-end
-
-function M.toggle_layout()
-  local ok, lib = pcall(require, "diffview.lib")
+  local ok, lifecycle = pcall(require, "codediff.ui.lifecycle")
   if not ok then
-    vim.notify("diffview.nvim is required", vim.log.levels.ERROR, { title = "Diffnotes" })
     return
   end
 
-  local view = lib.get_current_view()
-  if not view then
+  local tabpage = hooks.get_current_tabpage()
+  if not tabpage then
     return
   end
 
-  -- Get layout classes
-  local Diff1 = require("diffview.scene.layouts.diff_1").Diff1
-  local Diff2Hor = require("diffview.scene.layouts.diff_2_hor").Diff2Hor
-  local Diff2Ver = require("diffview.scene.layouts.diff_2_ver").Diff2Ver
+  local orig_buf, mod_buf = lifecycle.get_buffers(tabpage)
 
-  -- Custom cycle: horizontal -> vertical -> single -> horizontal
-  local layouts = { Diff2Hor, Diff2Ver, Diff1 }
-
-  local cur_file = view.cur_entry
-  if not cur_file then
-    return
+  -- Update buffer readonly state
+  if orig_buf and vim.api.nvim_buf_is_valid(orig_buf) then
+    vim.api.nvim_set_option_value("modifiable", not cfg.codediff.readonly, { buf = orig_buf })
+    vim.api.nvim_set_option_value("readonly", cfg.codediff.readonly, { buf = orig_buf })
+  end
+  if mod_buf and vim.api.nvim_buf_is_valid(mod_buf) then
+    vim.api.nvim_set_option_value("modifiable", not cfg.codediff.readonly, { buf = mod_buf })
+    vim.api.nvim_set_option_value("readonly", cfg.codediff.readonly, { buf = mod_buf })
   end
 
-  -- Find current layout and get next
-  local cur_layout = cur_file.layout
-  local cur_idx = 1
-  for i, layout in ipairs(layouts) do
-    if cur_layout:instanceof(layout) then
-      cur_idx = i
-      break
-    end
-  end
-  local next_layout = layouts[(cur_idx % #layouts) + 1]
+  -- Re-setup keymaps with new readonly state
+  keymaps.setup_keymaps(tabpage, orig_buf, mod_buf)
 
-  -- Get all files to update
-  local files = {}
-  if view.panel and view.panel.files then
-    if view.panel.files.working then
-      vim.list_extend(files, view.panel.files.working)
-    end
-    if view.panel.files.staged then
-      vim.list_extend(files, view.panel.files.staged)
-    end
-  end
-
-  -- Convert all files to new layout
-  for _, entry in ipairs(files) do
-    entry:convert_layout(next_layout)
-  end
-
-  -- Also convert current entry explicitly (might not be in files list)
-  cur_file:convert_layout(next_layout)
-
-  -- Restore cursor position
-  vim.defer_fn(function()
-    local main = view.cur_layout:get_main_win()
-    if main and main.id and vim.api.nvim_win_is_valid(main.id) then
-      vim.api.nvim_set_current_win(main.id)
-    end
-  end, 10)
+  local mode = cfg.codediff.readonly and "readonly" or "edit"
+  vim.notify("Switched to " .. mode .. " mode", vim.log.levels.INFO, { title = "Diffnotes" })
 end
 
 return M

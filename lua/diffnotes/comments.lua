@@ -150,16 +150,21 @@ function M.list()
 
     local comment = choice.comment
 
-    -- Navigate to file in diffview
-    local ok, lib = pcall(require, "diffview.lib")
+    -- Try to navigate to the file in codediff explorer
+    local ok, lifecycle = pcall(require, "codediff.ui.lifecycle")
     if ok then
-      local view = lib.get_current_view()
-      if view and view.panel and view.panel.files then
-        -- Find the file entry
-        for _, file in ipairs(view.panel.files) do
-          if file.path == comment.file then
-            view:set_file(file)
-            break
+      local tabpage = hooks.get_current_tabpage()
+      if tabpage then
+        local explorer = lifecycle.get_explorer(tabpage)
+        if explorer then
+          local explorer_mod = require("codediff.ui.explorer")
+          -- Find and select the file in explorer
+          -- This is a best-effort navigation
+          for i, node in ipairs(explorer.tree:get_nodes()) do
+            if node.path == comment.file then
+              explorer_mod.select_node(explorer, node)
+              break
+            end
           end
         end
       end
@@ -167,14 +172,8 @@ function M.list()
 
     -- Jump to line after a short delay
     vim.defer_fn(function()
-      local ok_actions, actions = pcall(require, "diffview.actions")
-      if ok_actions then
-        actions.focus_entry()
-      end
-      vim.defer_fn(function()
-        pcall(vim.api.nvim_win_set_cursor, 0, { comment.line, 0 })
-      end, 50)
-    end, 50)
+      pcall(vim.api.nvim_win_set_cursor, 0, { comment.line, 0 })
+    end, 100)
   end)
 end
 

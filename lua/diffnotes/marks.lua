@@ -7,7 +7,7 @@ local ns_id = vim.api.nvim_create_namespace("diffnotes")
 
 ---@param bufnr number
 function M.render_for_buffer(bufnr)
-  if not vim.api.nvim_buf_is_valid(bufnr) then
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
     return
   end
 
@@ -16,7 +16,23 @@ function M.render_for_buffer(bufnr)
     return
   end
 
-  local file = vim.fn.fnamemodify(bufname, ":.")
+  -- Extract file path, handling codediff:// virtual buffers
+  local file
+  if bufname:match("^codediff://") then
+    -- Virtual buffer: extract path from URI
+    -- Format: codediff://repo/path/to/file.lua?rev=xxx
+    local path = bufname:match("^codediff://[^/]+/(.+)%?") or bufname:match("^codediff://[^/]+/(.+)$")
+    if path then
+      file = path
+    end
+  else
+    file = vim.fn.fnamemodify(bufname, ":.")
+  end
+
+  if not file then
+    return
+  end
+
   local comments = store.get_for_file(file)
 
   vim.api.nvim_buf_clear_namespace(bufnr, ns_id, 0, -1)
@@ -58,23 +74,17 @@ function M.render_for_buffer(bufnr)
 end
 
 function M.refresh()
-  local ok, lib = pcall(require, "diffview.lib")
+  local ok, hooks = pcall(require, "diffnotes.hooks")
   if not ok then
     return
   end
 
-  local view = lib.get_current_view()
-  if not view or not view.cur_layout then
-    return
+  local orig_buf, mod_buf = hooks.get_buffers()
+  if orig_buf then
+    M.render_for_buffer(orig_buf)
   end
-
-  local layout = view.cur_layout
-  local wins = { layout.a, layout.b, layout.c, layout.d }
-
-  for _, win in ipairs(wins) do
-    if win and win.file and win.file.bufnr then
-      M.render_for_buffer(win.file.bufnr)
-    end
+  if mod_buf then
+    M.render_for_buffer(mod_buf)
   end
 end
 

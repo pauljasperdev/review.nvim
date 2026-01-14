@@ -4,153 +4,73 @@ local config = require("diffnotes.config")
 local comments = require("diffnotes.comments")
 local export = require("diffnotes.export")
 
----@return table[] diffview keymap entries for view buffers
-function M.get_diffview_keymaps()
+---@param tabpage number
+---@param orig_buf number
+---@param mod_buf number
+function M.setup_keymaps(tabpage, orig_buf, mod_buf)
   local cfg = config.get()
   local km = cfg.keymaps
-  local readonly = cfg.diffview.readonly
+  local readonly = cfg.codediff.readonly
 
-  local keymaps = {}
+  local function set_keymap(bufnr, mode, lhs, rhs, opts)
+    if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+      return
+    end
+    opts = opts or {}
+    opts.buffer = bufnr
+    vim.keymap.set(mode, lhs, rhs, opts)
+  end
 
-  -- Simple keymaps (always available in readonly mode)
+  local function set_both(mode, lhs, rhs, opts)
+    set_keymap(orig_buf, mode, lhs, rhs, opts)
+    set_keymap(mod_buf, mode, lhs, rhs, opts)
+  end
+
+  -- Simple keymaps in readonly mode
   if readonly then
-    -- i for add with menu
-    table.insert(keymaps, {
-      "n", "i",
-      function() comments.add_with_menu() end,
-      { desc = "Add comment (pick type)" },
-    })
-    -- d for delete
-    table.insert(keymaps, {
-      "n", "d",
-      function() comments.delete_at_cursor() end,
-      { desc = "Delete comment" },
-    })
-    -- e for edit
-    table.insert(keymaps, {
-      "n", "e",
-      function() comments.edit_at_cursor() end,
-      { desc = "Edit comment" },
-    })
+    set_both("n", "i", function() comments.add_with_menu() end, { desc = "Add comment (pick type)" })
+    set_both("n", "d", function() comments.delete_at_cursor() end, { desc = "Delete comment" })
+    set_both("n", "e", function() comments.edit_at_cursor() end, { desc = "Edit comment" })
+  else
+    -- Leader keymaps in edit mode
+    set_both("n", km.add_note, function() comments.add_at_cursor("note") end, { desc = "Add note" })
+    set_both("n", km.add_suggestion, function() comments.add_at_cursor("suggestion") end, { desc = "Add suggestion" })
+    set_both("n", km.add_issue, function() comments.add_at_cursor("issue") end, { desc = "Add issue" })
+    set_both("n", km.add_praise, function() comments.add_at_cursor("praise") end, { desc = "Add praise" })
+    set_both("n", km.delete_comment, function() comments.delete_at_cursor() end, { desc = "Delete comment" })
+    set_both("n", km.edit_comment, function() comments.edit_at_cursor() end, { desc = "Edit comment" })
   end
 
-  -- <leader>c* keymaps (in edit mode, or as alternatives)
-  if not readonly then
-    table.insert(keymaps, {
-      "n", km.add_note,
-      function() comments.add_at_cursor("note") end,
-      { desc = "Add note comment" },
-    })
-    table.insert(keymaps, {
-      "n", km.add_suggestion,
-      function() comments.add_at_cursor("suggestion") end,
-      { desc = "Add suggestion comment" },
-    })
-    table.insert(keymaps, {
-      "n", km.add_issue,
-      function() comments.add_at_cursor("issue") end,
-      { desc = "Add issue comment" },
-    })
-    table.insert(keymaps, {
-      "n", km.add_praise,
-      function() comments.add_at_cursor("praise") end,
-      { desc = "Add praise comment" },
-    })
-    table.insert(keymaps, {
-      "n", km.delete_comment,
-      function() comments.delete_at_cursor() end,
-      { desc = "Delete comment" },
-    })
-    table.insert(keymaps, {
-      "n", km.edit_comment,
-      function() comments.edit_at_cursor() end,
-      { desc = "Edit comment" },
-    })
+  -- Common keymaps
+  set_both("n", "c", function() comments.list() end, { desc = "List all comments" })
+  set_both("n", "C", function() require("diffnotes").clear() end, { desc = "Clear all comments" })
+  set_both("n", km.next_comment, function() comments.goto_next() end, { desc = "Next comment" })
+  set_both("n", km.prev_comment, function() comments.goto_prev() end, { desc = "Previous comment" })
+  set_both("n", km.export, function() export.to_clipboard() end, { desc = "Export to clipboard" })
+
+  -- Close and export
+  set_both("n", "q", function() require("diffnotes").close() end, { desc = "Close" })
+
+  -- Toggle readonly mode
+  set_both("n", "R", function() require("diffnotes").toggle_readonly() end, { desc = "Toggle readonly mode" })
+
+  -- File navigation in explorer mode
+  local ok, lifecycle = pcall(require, "codediff.ui.lifecycle")
+  if ok then
+    local explorer = lifecycle.get_explorer(tabpage)
+    if explorer then
+      local explorer_mod = require("codediff.ui.explorer")
+      set_both("n", "<Tab>", function()
+        explorer_mod.navigate_next(explorer)
+      end, { desc = "Next file" })
+      set_both("n", "<S-Tab>", function()
+        explorer_mod.navigate_prev(explorer)
+      end, { desc = "Previous file" })
+      set_both("n", "f", function()
+        explorer_mod.toggle_visibility(explorer)
+      end, { desc = "Toggle file panel" })
+    end
   end
-
-  -- Common keymaps (always available)
-  table.insert(keymaps, {
-    "n", "c",
-    function() comments.list() end,
-    { desc = "List all comments" },
-  })
-  table.insert(keymaps, {
-    "n", "C",
-    function() require("diffnotes").clear() end,
-    { desc = "Clear all comments" },
-  })
-  table.insert(keymaps, {
-    "n", km.next_comment,
-    function() comments.goto_next() end,
-    { desc = "Go to next comment" },
-  })
-  table.insert(keymaps, {
-    "n", km.prev_comment,
-    function() comments.goto_prev() end,
-    { desc = "Go to previous comment" },
-  })
-  table.insert(keymaps, {
-    "n", km.export,
-    function() export.to_clipboard() end,
-    { desc = "Export comments to clipboard" },
-  })
-
-  -- Layout toggle: simple 't' in readonly mode, configurable otherwise
-  local layout_key = readonly and "t" or km.toggle_layout
-  table.insert(keymaps, {
-    "n", layout_key,
-    function() require("diffnotes").toggle_layout() end,
-    { desc = "Cycle layout (horizontal/vertical)" },
-  })
-
-  table.insert(keymaps, {
-    "n", "q",
-    function() require("diffnotes").close() end,
-    { desc = "Close diffview" },
-  })
-
-  -- Toggle readonly/edit mode
-  table.insert(keymaps, {
-    "n", "R",
-    function() require("diffnotes").toggle_readonly() end,
-    { desc = "Toggle readonly/edit mode" },
-  })
-
-  -- Toggle focus between file panel and content
-  table.insert(keymaps, {
-    "n", "f",
-    function()
-      local actions = require("diffview.actions")
-      actions.toggle_files()
-    end,
-    { desc = "Toggle focus (file panel/content)" },
-  })
-
-  -- Tab/S-Tab to switch files and stay in diff view
-  table.insert(keymaps, {
-    "n", "<Tab>",
-    function()
-      local actions = require("diffview.actions")
-      actions.select_next_entry()
-      vim.defer_fn(function()
-        actions.focus_entry()
-      end, 10)
-    end,
-    { desc = "Next file" },
-  })
-  table.insert(keymaps, {
-    "n", "<S-Tab>",
-    function()
-      local actions = require("diffview.actions")
-      actions.select_prev_entry()
-      vim.defer_fn(function()
-        actions.focus_entry()
-      end, 10)
-    end,
-    { desc = "Previous file" },
-  })
-
-  return keymaps
 end
 
 return M

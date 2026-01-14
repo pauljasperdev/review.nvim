@@ -3,97 +3,151 @@ local M = {}
 local marks = require("diffnotes.marks")
 local config = require("diffnotes.config")
 
----@type table|nil
-local current_view = nil
+---@type number|nil Current tabpage with active codediff session
+local current_tabpage = nil
 
----@return table|nil
-function M.get_current_view()
-  return current_view
+---@return number|nil tabpage id
+function M.get_current_tabpage()
+  return current_tabpage
 end
 
----@return table|nil file entry, number|nil window id
-function M.get_current_file()
-  if not current_view then
-    return nil, nil
-  end
-
-  local ok, lib = pcall(require, "diffview.lib")
+---@return table|nil codediff lifecycle module
+local function get_lifecycle()
+  local ok, lifecycle = pcall(require, "codediff.ui.lifecycle")
   if not ok then
-    return nil, nil
+    return nil
   end
+  return lifecycle
+end
 
-  local view = lib.get_current_view()
-  if not view then
-    return nil, nil
+---@return table|nil codediff session
+function M.get_session()
+  if not current_tabpage then
+    return nil
   end
-
-  local entry = view.cur_entry
-  if not entry then
-    return nil, nil
+  local lifecycle = get_lifecycle()
+  if not lifecycle then
+    return nil
   end
-
-  local layout = view.cur_layout
-  local win_id = nil
-  if layout then
-    local main_win = layout:get_main_win()
-    if main_win then
-      win_id = main_win.id
-    end
-  end
-
-  return entry, win_id
+  return lifecycle.get_session(current_tabpage)
 end
 
 ---@return string|nil file path
 ---@return number|nil line number
 function M.get_cursor_position()
-  local entry, win_id = M.get_current_file()
-  if not entry then
+  local lifecycle = get_lifecycle()
+  if not lifecycle or not current_tabpage then
     return nil, nil
   end
 
-  local cursor
-  if win_id and vim.api.nvim_win_is_valid(win_id) then
-    cursor = vim.api.nvim_win_get_cursor(win_id)
+  local sess = lifecycle.get_session(current_tabpage)
+  if not sess then
+    return nil, nil
+  end
+
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local current_buf = vim.api.nvim_get_current_buf()
+
+  -- Get paths from session
+  local orig_path, mod_path = lifecycle.get_paths(current_tabpage)
+  local orig_buf, mod_buf = lifecycle.get_buffers(current_tabpage)
+
+  -- Determine which file we're on based on buffer
+  local file_path
+  if current_buf == orig_buf then
+    file_path = orig_path
+  elseif current_buf == mod_buf then
+    file_path = mod_path
   else
-    cursor = vim.api.nvim_win_get_cursor(0)
+    -- Try to get path from buffer name
+    local bufname = vim.api.nvim_buf_get_name(current_buf)
+    if bufname and bufname ~= "" then
+      -- Strip codediff:// prefix if present
+      if bufname:match("^codediff://") then
+        file_path = mod_path or orig_path
+      else
+        file_path = vim.fn.fnamemodify(bufname, ":.")
+      end
+    end
   end
 
-  return entry.path, cursor[1]
+  if not file_path then
+    return nil, nil
+  end
+
+  -- Return relative path
+  local git_ctx = lifecycle.get_git_context(current_tabpage)
+  if git_ctx and git_ctx.git_root then
+    local abs_path = vim.fn.fnamemodify(file_path, ":p")
+    local rel_path = abs_path:gsub("^" .. vim.pesc(git_ctx.git_root) .. "/", "")
+    return rel_path, cursor[1]
+  end
+
+  return vim.fn.fnamemodify(file_path, ":."), cursor[1]
 end
 
-function M.on_view_opened(view)
-  current_view = view
+---@return number|nil original buffer
+---@return number|nil modified buffer
+function M.get_buffers()
+  local lifecycle = get_lifecycle()
+  if not lifecycle or not current_tabpage then
+    return nil, nil
+  end
+  return lifecycle.get_buffers(current_tabpage)
 end
 
-function M.on_view_closed()
-  current_view = nil
-end
+-- Called when codediff session is created
+function M.on_session_created(tabpage)
+  current_tabpage = tabpage
 
-function M.on_diff_buf_read(bufnr)
-  marks.render_for_buffer(bufnr)
+  local lifecycle = get_lifecycle()
+  if not lifecycle then
+    return
+  end
 
-  -- Make diff buffers read-only if configured
+  local orig_buf, mod_buf = lifecycle.get_buffers(tabpage)
+
+  -- Make buffers readonly if configured
   local cfg = config.get()
-  if cfg.diffview.readonly and bufnr and vim.api.nvim_buf_is_valid(bufnr) then
-    vim.api.nvim_set_option_value("modifiable", false, { buf = bufnr })
-    vim.api.nvim_set_option_value("readonly", true, { buf = bufnr })
+  if cfg.codediff.readonly then
+    if orig_buf and vim.api.nvim_buf_is_valid(orig_buf) then
+      vim.api.nvim_set_option_value("modifiable", false, { buf = orig_buf })
+      vim.api.nvim_set_option_value("readonly", true, { buf = orig_buf })
+    end
+    if mod_buf and vim.api.nvim_buf_is_valid(mod_buf) then
+      vim.api.nvim_set_option_value("modifiable", false, { buf = mod_buf })
+      vim.api.nvim_set_option_value("readonly", true, { buf = mod_buf })
+    end
   end
+
+  -- Render comments for both buffers
+  vim.defer_fn(function()
+    marks.render_for_buffer(orig_buf)
+    marks.render_for_buffer(mod_buf)
+  end, 100)
 end
 
----@return table diffview hooks config
-function M.get_diffview_hooks()
-  return {
-    view_opened = function(view)
-      M.on_view_opened(view)
-    end,
-    view_closed = function()
-      M.on_view_closed()
-    end,
-    diff_buf_read = function(bufnr)
-      M.on_diff_buf_read(bufnr)
-    end,
-  }
+-- Called when codediff session is closed
+function M.on_session_closed()
+  current_tabpage = nil
+end
+
+-- Called when file changes in explorer mode
+function M.on_file_changed(tabpage)
+  current_tabpage = tabpage
+
+  local lifecycle = get_lifecycle()
+  if not lifecycle then
+    return
+  end
+
+  local orig_buf, mod_buf = lifecycle.get_buffers(tabpage)
+
+  -- Re-render comments
+  vim.defer_fn(function()
+    marks.render_for_buffer(orig_buf)
+    marks.render_for_buffer(mod_buf)
+  end, 50)
 end
 
 return M

@@ -7,11 +7,11 @@ local diffnotes = require("diffnotes")
 
 vim.api.nvim_create_user_command("DiffnotesOpen", function()
   diffnotes.open()
-end, { desc = "Open diffview with diffnotes enabled" })
+end, { desc = "Open codediff with diffnotes enabled" })
 
 vim.api.nvim_create_user_command("DiffnotesClose", function()
   diffnotes.close()
-end, { desc = "Close diffview" })
+end, { desc = "Close codediff" })
 
 vim.api.nvim_create_user_command("DiffnotesExport", function()
   diffnotes.export()
@@ -25,13 +25,9 @@ vim.api.nvim_create_user_command("DiffnotesClear", function()
   diffnotes.clear()
 end, { desc = "Clear all comments" })
 
-vim.api.nvim_create_user_command("DiffnotesToggleLayout", function()
-  diffnotes.toggle_layout()
-end, { desc = "Cycle layout (horizontal/vertical)" })
-
 vim.api.nvim_create_user_command("DiffnotesList", function()
   require("diffnotes.comments").list()
-end, { desc = "List all comments in quickfix" })
+end, { desc = "List all comments" })
 
 vim.api.nvim_create_user_command("DiffnotesToggleReadonly", function()
   require("diffnotes").toggle_readonly()

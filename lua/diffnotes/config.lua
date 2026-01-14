@@ -4,7 +4,7 @@ local M = {}
 ---@field comment_types table<string, CommentType>
 ---@field keymaps DiffnotesKeymaps
 ---@field export DiffnotesExportConfig
----@field diffview DiffnotesDiffviewConfig
+---@field codediff DiffnotesCodediffConfig
 
 ---@class CommentType
 ---@field key string
@@ -23,13 +23,12 @@ local M = {}
 ---@field next_comment string
 ---@field prev_comment string
 ---@field export string
----@field toggle_layout string
 
 ---@class DiffnotesExportConfig
 ---@field context_lines number
 ---@field include_file_stats boolean
 
----@class DiffnotesDiffviewConfig
+---@class DiffnotesCodediffConfig
 ---@field readonly boolean
 
 ---@type DiffnotesConfig
@@ -47,16 +46,15 @@ M.defaults = {
     add_praise = "<leader>cp",
     delete_comment = "<leader>cd",
     edit_comment = "<leader>ce",
-    next_comment = "]c",
-    prev_comment = "[c",
+    next_comment = "]n",
+    prev_comment = "[n",
     export = "<C-e>",
-    toggle_layout = "<C-t>",
   },
   export = {
     context_lines = 3,
     include_file_stats = true,
   },
-  diffview = {
+  codediff = {
     readonly = true,
   },
 }
