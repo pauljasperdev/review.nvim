@@ -75,6 +75,11 @@ function M.get_diffview_keymaps()
     { desc = "List all comments" },
   })
   table.insert(keymaps, {
+    "n", "C",
+    function() require("diffnotes").clear() end,
+    { desc = "Clear all comments" },
+  })
+  table.insert(keymaps, {
     "n", km.next_comment,
     function() comments.goto_next() end,
     { desc = "Go to next comment" },

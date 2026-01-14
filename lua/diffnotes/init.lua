@@ -29,6 +29,9 @@ function M.open()
     return
   end
 
+  -- Load persisted comments
+  store.load()
+
   local dv_hooks = hooks.get_diffview_hooks()
   local dv_keymaps = keymaps.get_diffview_keymaps()
 

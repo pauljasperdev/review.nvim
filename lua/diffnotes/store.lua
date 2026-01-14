@@ -1,5 +1,7 @@
 local M = {}
 
+local storage = require("diffnotes.storage")
+
 ---@class Comment
 ---@field id string
 ---@field file string
@@ -12,11 +14,33 @@ local M = {}
 M.comments = {}
 
 local id_counter = 0
+local loaded = false
 
 ---@return string
 local function generate_id()
   id_counter = id_counter + 1
   return string.format("comment_%d_%d", os.time(), id_counter)
+end
+
+local function persist()
+  storage.save(M.comments)
+end
+
+function M.load()
+  if loaded then
+    return
+  end
+  M.comments = storage.load()
+  -- Update id_counter to avoid collisions
+  for _, comments in pairs(M.comments) do
+    for _, comment in ipairs(comments) do
+      local num = tonumber(comment.id:match("comment_%d+_(%d+)"))
+      if num and num > id_counter then
+        id_counter = num
+      end
+    end
+  end
+  loaded = true
 end
 
 ---@param file string
@@ -39,6 +63,7 @@ function M.add(file, line, type, text)
   }
 
   table.insert(M.comments[file], comment)
+  persist()
   return comment
 end
 
@@ -86,6 +111,7 @@ function M.update(id, text, new_type)
         if new_type then
           comment.type = new_type
         end
+        persist()
         return true
       end
     end
@@ -103,6 +129,7 @@ function M.delete(id)
         if #comments == 0 then
           M.comments[file] = nil
         end
+        persist()
         return true
       end
     end
@@ -144,6 +171,7 @@ end
 function M.clear()
   M.comments = {}
   id_counter = 0
+  storage.clear()
 end
 
 return M
