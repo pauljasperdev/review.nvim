@@ -2,6 +2,8 @@
 
 Code review annotations for diffview.nvim, optimized for AI feedback loops.
 
+Inspired by [tuicr](https://github.com/agavra/tuicr).
+
 ## Features
 
 - Add comments to specific lines in diff view (Note, Suggestion, Issue, Praise)
