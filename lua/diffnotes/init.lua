@@ -225,17 +225,6 @@ function M.toggle_layout()
     return
   end
 
-  -- Get all files to update
-  local files = {}
-  if view.panel and view.panel.files then
-    if view.panel.files.working then
-      vim.list_extend(files, view.panel.files.working)
-    end
-    if view.panel.files.staged then
-      vim.list_extend(files, view.panel.files.staged)
-    end
-  end
-
   -- Find current layout and get next
   local cur_layout = cur_file.layout
   local cur_idx = 1
@@ -247,10 +236,24 @@ function M.toggle_layout()
   end
   local next_layout = layouts[(cur_idx % #layouts) + 1]
 
+  -- Get all files to update
+  local files = {}
+  if view.panel and view.panel.files then
+    if view.panel.files.working then
+      vim.list_extend(files, view.panel.files.working)
+    end
+    if view.panel.files.staged then
+      vim.list_extend(files, view.panel.files.staged)
+    end
+  end
+
   -- Convert all files to new layout
   for _, entry in ipairs(files) do
     entry:convert_layout(next_layout)
   end
+
+  -- Also convert current entry explicitly (might not be in files list)
+  cur_file:convert_layout(next_layout)
 
   -- Restore cursor position
   vim.defer_fn(function()
