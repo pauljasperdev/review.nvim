@@ -37,9 +37,7 @@ Using lazy.nvim:
     { "<leader>r", "<cmd>Review<cr>", desc = "Review" },
     { "<leader>R", "<cmd>Review commits<cr>", desc = "Review commits" },
   },
-  config = function()
-    require("review").setup()
-  end,
+  opts = {},
 }
 ```
 
