@@ -171,6 +171,7 @@ function M.on_session_closed()
     pcall(vim.api.nvim_del_augroup_by_id, buf_augroup)
     buf_augroup = nil
   end
+  require("review.keymaps").cleanup()
 end
 
 -- Called when file changes in explorer mode
